@@ -34,10 +34,26 @@ class CreditCard(object):
     def __init__(self):
         self.issuer_number = '400000'
         self.customer_account_number = create_random_n_digit_number_string(9)
-        self.check_digit = str(random.randrange(0, 9))
+        self.check_digit = '0'
         self.pin = create_random_n_digit_number_string(4)
         self.balance = 0
         self.session_open = False
+    
+    def calculate_control_number(self):
+        number_string = self.issuer_number + self.customer_account_number
+        number_list = [int(digit) for digit in number_string]
+        for i, digit in enumerate(number_list, 0):
+            if (i + 1) % 2 != 0:
+                number_list[i] = number_list[i] * 2
+                if number_list[i] > 9:
+                    number_list[i] = number_list[i] - 9
+        return sum(number_list)
+    
+    def set_check_digit(self):
+        result = str(10 - self.calculate_control_number() % 10)
+        if result == '10':
+            result = '0'
+        self.check_digit = result
     
     def __str__(self):
         return self.issuer_number + self.customer_account_number + self.check_digit
@@ -87,9 +103,11 @@ user_messages = ['\n'\
 def create_random_n_digit_number_string(number_of_digits):
     return str(random.randrange(1, 10**number_of_digits)).zfill(number_of_digits)
 
+
 def print_credit_card_balance(credit_card):
     balance = credit_card.get_balance()
     print(f'\nBalance: {balance}\n')
+
 
 def account_menu_handler(credit_card):
     print(menu_prompts[MenuPrompt.ACCOUNT_MENU])
@@ -112,11 +130,13 @@ def account_loop(credit_card):
         result = account_menu_handler(credit_card)
     return result
 
+def is_valid_card_number(credit_card, input_card_number):
+    return input_card_number == credit_card.get_card_number()
 
 def is_valid_login(credit_card, input_card_number, input_card_pin):
-    is_valid_card = input_card_number == credit_card.get_card_number()
+    is_valid_card_number = is_valid_card_number(credit_card, input_card_number)
     is_correct_pin = input_card_pin == credit_card.get_pin()
-    return is_valid_card and is_correct_pin
+    return is_valid_card_number and is_correct_pin
 
 
 def login_to_account(credit_card):
@@ -135,6 +155,7 @@ def login_to_account(credit_card):
 
 def create_account():
     result = CreditCard()
+    result.set_check_digit()
     print(user_messages[UserMessage.CARD_CREATION])
     print(result)
     print(user_messages[UserMessage.PIN_CREATION])
