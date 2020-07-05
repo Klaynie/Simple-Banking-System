@@ -3,13 +3,32 @@ from unittest.mock import patch, call
 from unittest import TestCase
 from simple_banking_system import *
 
-class IsValidCardNumberCases(TestCase):
-    def test_valid_card_01(self):
+class AlreadyExistsCardNumberCases(TestCase):
+    def test_already_exists_card_01(self):
+        session = Session()
         credit_card = CreditCard()
-        credit_card.customer_account_number = '844943340'
+        credit_card.customer_account_number = '742416163'                                               
         credit_card.check_digit = '3'
-        input_card_number = '4000008449433403'
-        self.assertTrue(is_valid_card_number(credit_card, input_card_number))
+        self.assertTrue(already_exists(session, credit_card))
+    def test_already_exists_card_02(self):
+        session = Session()
+        credit_card = CreditCard()
+        credit_card.issuer_number = '300000'
+        credit_card.customer_account_number = '742416163'                                               
+        credit_card.check_digit = '3'
+        self.assertFalse(already_exists(session, credit_card))
+
+class IsValidLoginCases(TestCase):
+    def test_correct_login(self):
+        session = Session()
+        input_card_number = '4000007424161633'
+        input_card_pin = '2582'
+        self.assertTrue(is_valid_login(session, input_card_number, input_card_pin))
+    def test_incorrect_login(self):
+        session = Session()
+        input_card_number = '4000007424161633'
+        input_card_pin = '1337'
+        self.assertFalse(is_valid_login(session, input_card_number, input_card_pin))
 
 class CalculateControlNumberCases(TestCase):
     def test_control_number_calculation_01(self):

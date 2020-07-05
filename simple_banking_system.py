@@ -1,5 +1,23 @@
 from enum import IntEnum
+import sqlalchemy as db
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, Integer, String, Date
+from sqlalchemy.orm import sessionmaker
 import random
+
+Base = declarative_base()
+
+
+class Table(Base):
+    __tablename__ = 'card'
+    id = Column(Integer, primary_key=True)
+    number = Column(String)
+    pin = Column(String)
+    balance = Column(Integer, default=0)
+
+    def __repr__(self):
+        return self.number
 
 class BaseMenuChoice(IntEnum):
     EXIT = 0
@@ -33,11 +51,10 @@ class CreditCard(object):
     
     def __init__(self):
         self.issuer_number = '400000'
-        self.customer_account_number = create_random_n_digit_number_string(9)
+        self.customer_account_number = create_random_number_string(9)
         self.check_digit = '0'
-        self.pin = create_random_n_digit_number_string(4)
+        self.pin = create_random_number_string(4)
         self.balance = 0
-        self.session_open = False
     
     def calculate_control_number(self):
         number_string = self.issuer_number + self.customer_account_number
@@ -70,7 +87,12 @@ class CreditCard(object):
     
     def close_session(self):
         self.session_open = False
-        
+
+
+
+engine = create_engine('sqlite:///card.s3db?check_same_thread=False')
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)       
 
 menu_prompts = ['1. Create an account\n'\
                  '2. Log into account\n'\
@@ -98,98 +120,136 @@ user_messages = ['\n'\
                  'Wrong card number or PIN!'\
                  '\n']
 
-def create_random_n_digit_number_string(number_of_digits):
-    return str(random.randrange(1, 10**number_of_digits)).zfill(number_of_digits)
+def create_random_number_string(digits):
+    return str(random.randrange(1, 10**digits)).zfill(digits)
 
 
-def print_credit_card_balance(credit_card):
-    balance = credit_card.get_balance()
-    print(f'\nBalance: {balance}\n')
+def print_credit_card_balance(session, input_card_number):
+    result = session\
+            .query(Table.balance)\
+            .filter(Table.number == input_card_number)\
+            .scalar()
+    print(f'\nBalance: {result}\n')
 
 
-def account_menu_handler(credit_card):
-    print(menu_prompts[MenuPrompt.ACCOUNT_MENU])
-    result = credit_card
-    action = get_menu_choice()
+def account_menu_handler(session, input_card_number):
+    result = None
+    action = get_menu_choice(menu_prompts[MenuPrompt.ACCOUNT_MENU])
     if action == AccountMenuChoice.EXIT:
-        credit_card.close_session()
         result = BaseMenuChoice.EXIT
     elif action == AccountMenuChoice.SHOW_BALANCE:
-        print_credit_card_balance(credit_card)
+        print_credit_card_balance(session, input_card_number)
     elif action == AccountMenuChoice.ACCOUNT_LOGOUT:
-        credit_card.close_session()
+        result = AccountMenuChoice.ACCOUNT_LOGOUT
         print(user_messages[UserMessage.LOGOUT_OK])
     return result
 
 
-def account_loop(credit_card):
-    credit_card.open_session()
-    while credit_card.session_open:
-        result = account_menu_handler(credit_card)
+def account_loop(session, input_card_number):
+    keep_in_account_menu = True
+    while keep_in_account_menu:
+        result = account_menu_handler(session, input_card_number)
+        if result == BaseMenuChoice.EXIT\
+        or result == AccountMenuChoice.ACCOUNT_LOGOUT:
+            keep_in_account_menu = False
     return result
 
 
-def is_valid_card_number(credit_card, input_card_number):
-    return True
+def is_valid_login(session, card_number, card_pin):
+    result = len(\
+                 session.query(Table)\
+                .filter(Table.number == card_number\
+                ,Table.pin == card_pin).all()) != 0
+    return result
 
 
-def is_valid_login(credit_card, input_card_number, input_card_pin):
-    is_valid_card_number = input_card_number == credit_card.get_card_number()
-    is_correct_pin = input_card_pin == credit_card.get_pin()
-    return is_valid_card_number and is_correct_pin
-
-
-def login_to_account(credit_card):
-    result = credit_card
+def get_login_information():
     print(user_messages[UserMessage.CARD_PROMPT])
     input_card_number = input()
     print(user_messages[UserMessage.PIN_PROMPT])
     input_card_pin = input()
-    if is_valid_login(credit_card, input_card_number, input_card_pin):
+    return input_card_number, input_card_pin
+
+
+def login_to_account(session):
+    result = None
+    card_number, card_pin = get_login_information()
+    if is_valid_login(session, card_number, card_pin):
         print(user_messages[UserMessage.LOGIN_OK])
-        result = account_loop(credit_card)
+        result = account_loop(session, card_number)
     else:
         print(user_messages[UserMessage.WRONG_CARD_OR_PIN])
     return result
 
 
-def create_account():
+def create_credit_card():
     result = CreditCard()
     result.set_check_digit()
-    print(user_messages[UserMessage.CARD_CREATION])
-    print(result)
-    print(user_messages[UserMessage.PIN_CREATION])
-    print(result.pin)
-    print('\n')
     return result
+
+
+def print_credit_card_info(credit_card):
+    print(user_messages[UserMessage.CARD_CREATION])
+    print(credit_card)
+    print(user_messages[UserMessage.PIN_CREATION])
+    print(credit_card.pin)
+    print('\n')
+
+
+def create_account(session):
+    keep_in_account_creation = True
+    while keep_in_account_creation:
+        credit_card = create_credit_card()
+        if not already_exists(session, credit_card):
+            keep_in_account_creation = False
+            save_account(session, credit_card)
+            print_credit_card_info(credit_card)
+
+
+def already_exists(session, credit_card):
+    result = len(\
+                 session.query(Table)\
+                .filter(Table.number == credit_card.get_card_number()\
+                ).all()) != 0
+    return result
+
+
+def save_account(session, credit_card):
+    new_row = Table(\
+                number=credit_card.get_card_number()\
+               ,pin=credit_card.get_pin()\
+               ,balance=credit_card.get_balance()
+               )
+    session.add(new_row)
+    session.commit()
             
 
-def get_menu_choice():
+def get_menu_choice(message):
+    print(message)
     return int(input())
 
 
-def base_menu_handler(credit_card=None):
-    print(menu_prompts[MenuPrompt.BASE_MENU])
-    action = get_menu_choice()
+def base_menu_handler(session):
+    action = get_menu_choice(menu_prompts[MenuPrompt.BASE_MENU])
     if action == BaseMenuChoice.EXIT:
         result = BaseMenuChoice.EXIT
     elif action == BaseMenuChoice.CREATE_ACCOUNT:
-        result = create_account()
+        result = create_account(session)
     elif action == BaseMenuChoice.ACCOUNT_LOGIN:
-        result = login_to_account(credit_card)
+        result = login_to_account(session)
     return result
 
 
-def banking_menu_loop():
+def banking_menu_loop(session):
     global menu_prompts, user_messages
     stay_in_banking_loop = True
-    result = None
     while stay_in_banking_loop:
-        result = base_menu_handler(result)
+        result = base_menu_handler(session)
         if result == BaseMenuChoice.EXIT:
             print(user_messages[UserMessage.EXIT])
             stay_in_banking_loop = False
         
 
 if __name__ == "__main__":
-    banking_menu_loop()
+    new_session = Session()
+    banking_menu_loop(new_session)
