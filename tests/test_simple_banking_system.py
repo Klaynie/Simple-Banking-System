@@ -5,13 +5,14 @@ from simple_banking_system import *
 
 class AlreadyExistsCardNumberCases(TestCase):
     def test_already_exists_card_01(self):
-        session = Session()
+        session = sqlite3.connect('card.s3db')
         credit_card = CreditCard()
-        credit_card.customer_account_number = '742416163'                                               
-        credit_card.check_digit = '3'
+        credit_card.issuer_number = '400000'
+        credit_card.customer_account_number = '003669456'                                               
+        credit_card.check_digit = '2'
         self.assertTrue(already_exists(session, credit_card))
     def test_already_exists_card_02(self):
-        session = Session()
+        session = sqlite3.connect('card.s3db')
         credit_card = CreditCard()
         credit_card.issuer_number = '300000'
         credit_card.customer_account_number = '742416163'                                               
@@ -20,15 +21,15 @@ class AlreadyExistsCardNumberCases(TestCase):
 
 class IsValidLoginCases(TestCase):
     def test_correct_login(self):
-        session = Session()
-        input_card_number = '4000007424161633'
-        input_card_pin = '2582'
-        self.assertTrue(is_valid_login(session, input_card_number, input_card_pin))
+        session = sqlite3.connect('card.s3db')
+        card_number = '4000000036694562'
+        card_pin = '0854'
+        self.assertTrue(is_valid_login(session, card_number, card_pin))
     def test_incorrect_login(self):
-        session = Session()
-        input_card_number = '4000007424161633'
-        input_card_pin = '1337'
-        self.assertFalse(is_valid_login(session, input_card_number, input_card_pin))
+        session = sqlite3.connect('card.s3db')
+        card_number = '4000007424161633'
+        card_pin = '1337'
+        self.assertFalse(is_valid_login(session, card_number, card_pin))
 
 class CalculateControlNumberCases(TestCase):
     def test_control_number_calculation_01(self):

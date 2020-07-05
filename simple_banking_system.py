@@ -1,23 +1,6 @@
 from enum import IntEnum
-import sqlalchemy as db
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, Date
-from sqlalchemy.orm import sessionmaker
+import sqlite3
 import random
-
-Base = declarative_base()
-
-
-class Table(Base):
-    __tablename__ = 'card'
-    id = Column(Integer, primary_key=True)
-    number = Column(String)
-    pin = Column(String)
-    balance = Column(Integer, default=0)
-
-    def __repr__(self):
-        return self.number
 
 class BaseMenuChoice(IntEnum):
     EXIT = 0
@@ -89,11 +72,6 @@ class CreditCard(object):
         self.session_open = False
 
 
-
-engine = create_engine('sqlite:///card.s3db?check_same_thread=False')
-Base.metadata.create_all(engine)
-Session = sessionmaker(bind=engine)       
-
 menu_prompts = ['1. Create an account\n'\
                  '2. Log into account\n'\
                  '0. Exit'
@@ -125,11 +103,14 @@ def create_random_number_string(digits):
 
 
 def print_credit_card_balance(session, input_card_number):
-    result = session\
-            .query(Table.balance)\
-            .filter(Table.number == input_card_number)\
-            .scalar()
-    print(f'\nBalance: {result}\n')
+    c = session.cursor()
+    row = c.execute('''SELECT balance
+                             FROM card
+                        WHERE
+                        number = ?'''\
+                        ,(input_card_number,))
+    balance = row.fetchone()[0]
+    print(f'\nBalance: {balance}\n')
 
 
 def account_menu_handler(session, input_card_number):
@@ -145,10 +126,10 @@ def account_menu_handler(session, input_card_number):
     return result
 
 
-def account_loop(session, input_card_number):
+def account_loop(session, card_number):
     keep_in_account_menu = True
     while keep_in_account_menu:
-        result = account_menu_handler(session, input_card_number)
+        result = account_menu_handler(session, card_number)
         if result == BaseMenuChoice.EXIT\
         or result == AccountMenuChoice.ACCOUNT_LOGOUT:
             keep_in_account_menu = False
@@ -156,10 +137,16 @@ def account_loop(session, input_card_number):
 
 
 def is_valid_login(session, card_number, card_pin):
-    result = len(\
-                 session.query(Table)\
-                .filter(Table.number == card_number\
-                ,Table.pin == card_pin).all()) != 0
+    c = session.cursor()
+    account_info = (card_number, card_pin)
+    c.execute('''SELECT *
+                   FROM card
+                  WHERE
+                number = ?
+                AND
+                pin = ?'''\
+               ,account_info)
+    result = c.fetchone() is not None
     return result
 
 
@@ -207,20 +194,32 @@ def create_account(session):
 
 
 def already_exists(session, credit_card):
-    result = len(\
-                 session.query(Table)\
-                .filter(Table.number == credit_card.get_card_number()\
-                ).all()) != 0
+    c = session.cursor()
+    card_number = (credit_card.get_card_number(),)
+    c.execute('''SELECT *
+                   FROM card
+                  WHERE
+                number = ?'''\
+               ,card_number)
+    result = c.fetchone() is not None
     return result
 
 
 def save_account(session, credit_card):
-    new_row = Table(\
-                number=credit_card.get_card_number()\
-               ,pin=credit_card.get_pin()\
-               ,balance=credit_card.get_balance()
-               )
-    session.add(new_row)
+    c = session.cursor()
+    card_number = credit_card.get_card_number()
+    card_pin = credit_card.get_pin()
+    account_info = (card_number, card_pin)
+    c.execute('''INSERT INTO
+                   card (
+                 number,
+                 pin
+                )
+                 VALUES (
+                 ?,
+                 ?
+                )'''\
+               ,account_info)
     session.commit()
             
 
@@ -248,8 +247,17 @@ def banking_menu_loop(session):
         if result == BaseMenuChoice.EXIT:
             print(user_messages[UserMessage.EXIT])
             stay_in_banking_loop = False
-        
+
+def setup_database():
+    conn = sqlite3.connect('card.s3db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS card (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 number TEXT,
+                 pin TEXT,
+                 balance INTEGER DEFAULT 0)''')
 
 if __name__ == "__main__":
-    new_session = Session()
+    setup_database()
+    new_session = sqlite3.connect('card.s3db')
     banking_menu_loop(new_session)
