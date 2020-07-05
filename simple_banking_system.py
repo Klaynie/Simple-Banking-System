@@ -50,9 +50,7 @@ class CreditCard(object):
         return sum(number_list)
     
     def set_check_digit(self):
-        result = str(10 - self.calculate_control_number() % 10)
-        if result == '10':
-            result = '0'
+        result = str((10 - self.calculate_control_number() % 10) % 10)
         self.check_digit = result
     
     def __str__(self):
@@ -130,11 +128,13 @@ def account_loop(credit_card):
         result = account_menu_handler(credit_card)
     return result
 
+
 def is_valid_card_number(credit_card, input_card_number):
-    return input_card_number == credit_card.get_card_number()
+    return True
+
 
 def is_valid_login(credit_card, input_card_number, input_card_pin):
-    is_valid_card_number = is_valid_card_number(credit_card, input_card_number)
+    is_valid_card_number = input_card_number == credit_card.get_card_number()
     is_correct_pin = input_card_pin == credit_card.get_pin()
     return is_valid_card_number and is_correct_pin
 
