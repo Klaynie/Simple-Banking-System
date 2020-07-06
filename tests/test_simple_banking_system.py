@@ -53,3 +53,9 @@ class TestLuhnAlogrithmCases(TestCase):
                         number_list[j] = number_list[j] - 9
             result += sum(number_list) % 10
         self.assertTrue(result == 0)
+    def test_luhn_alogrithm_02(self):
+        number_string = '4000007424161633'
+        self.assertTrue(passes_luhn_alogrithm(number_string))
+    def test_luhn_alogrithm_03(self):
+        number_string = '4000007424161623'
+        self.assertFalse(passes_luhn_alogrithm(number_string))

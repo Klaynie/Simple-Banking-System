@@ -10,7 +10,10 @@ class BaseMenuChoice(IntEnum):
 class AccountMenuChoice(IntEnum):
     EXIT = 0
     SHOW_BALANCE = 1
-    ACCOUNT_LOGOUT = 2
+    ADD_INCOME = 2
+    TRANSFER = 3
+    CLOSE_ACCOUNT = 4
+    ACCOUNT_LOGOUT = 5
 
 class MenuPrompt(IntEnum):
     BASE_MENU = 0
@@ -25,7 +28,15 @@ class UserMessage(IntEnum):
     LOGIN_OK = 5
     LOGOUT_OK = 6
     WRONG_CARD_OR_PIN = 7
-    BALANCE = 8
+    INCOME_PROMPT = 8
+    INCOME_CONFIRM = 9
+    CLOSE_ACCOUNT_CONFIRM = 10
+    TRANSFER_CARD_PROMPT = 11
+    NOT_PASSES_LUHN = 12
+    CARD_NOT_EXIST = 13
+    TRANSFER_AMOUNT_PROMPT = 14
+    NOT_ENOUGH_MONEY = 15
+    TRANSFER_OK = 16
 
 class CreditCard(object):
     """ Represents a credit card.
@@ -73,11 +84,14 @@ class CreditCard(object):
 
 
 menu_prompts = ['1. Create an account\n'\
-                 '2. Log into account\n'\
-                 '0. Exit'
-                ,'1. Balance\n'\
-                 '2. Log out\n'\
-                 '0. Exit']
+                '2. Log into account\n'\
+                '0. Exit'
+               ,'1. Balance\n'\
+                '2. Add income\n'\
+                '3. Do transfer\n'\
+                '4. Close account\n'\
+                '5. Log out\n'\
+                '0. Exit']
 
 user_messages = ['\n'\
                  'Bye!'
@@ -96,10 +110,42 @@ user_messages = ['\n'\
                  '\n'
                 ,'\n'\
                  'Wrong card number or PIN!'\
+                 '\n'
+                ,'\n'\
+                 'Enter income:'
+                ,'Income was added!'\
+                 '\n'
+                ,'\n'\
+                 'The account has been closed!'\
+                 '\n'
+                ,'\n'\
+                 'Transfer\n'
+                 'Enter card number:\n'
+                ,'Probably you made mistake in the card number. Please try again!'\
+                 '\n'
+                ,'Such a card does not exist.'\
+                 '\n'
+                ,'Enter how much money you want to transfer:'
+                ,'Not enough money!'\
+                 '\n'
+                ,'Success!'\
                  '\n']
 
 def create_random_number_string(digits):
     return str(random.randrange(1, 10**digits)).zfill(digits)
+
+
+def add_income_to_account(session, input_card_number, income):
+    update_details = (income, input_card_number)
+    c = session.cursor()
+    c.execute('''UPDATE
+                   card
+                    SET
+                balance = balance + ?
+                  WHERE
+                number = ?'''\
+               ,update_details)
+    session.commit()
 
 
 def print_credit_card_balance(session, input_card_number):
@@ -113,13 +159,69 @@ def print_credit_card_balance(session, input_card_number):
     print(f'\nBalance: {balance}\n')
 
 
+def close_account(session, input_card_number):
+    c = session.cursor()
+    row = c.execute('''DELETE FROM
+                       card
+                        WHERE
+                       number = ?'''\
+                     ,(input_card_number,))
+    session.commit()
+    print(user_messages[UserMessage.CLOSE_ACCOUNT_CONFIRM])
+
+
+def is_valid_target_account(session, input_card_number, target_account):
+    result = True
+    if not passes_luhn_alogrithm(target_account):
+        result = False
+        print(user_messages[UserMessage.NOT_PASSES_LUHN])
+    elif not already_exists(session, target_account):
+        result = False
+        print(user_messages[UserMessage.CARD_NOT_EXIST])
+    return result
+
+
+def is_valid_transfer_amount(session, card_number, transfer_amount):
+    c = session.cursor()
+    transfer_details = (card_number, transfer_amount)
+    c.execute('''SELECT *
+                   FROM card
+                  WHERE
+                number = ?
+                AND
+                balance >= ?'''\
+               ,transfer_details)
+    result = c.fetchone() is not None
+    if result == False:
+        print(user_messages[UserMessage.NOT_ENOUGH_MONEY])
+    return result
+
+def transfer_money(session, input_card_number):
+    target_account = input(user_messages[UserMessage.TRANSFER_CARD_PROMPT])
+    if is_valid_target_account(session, input_card_number, target_account):
+        transfer_amount = request_integer(user_messages[UserMessage.TRANSFER_AMOUNT_PROMPT])
+        if is_valid_transfer_amount(session, input_card_number, transfer_amount):
+            add_income_to_account(session, input_card_number, -transfer_amount)
+            add_income_to_account(session, target_account, transfer_amount)
+            print(user_messages[UserMessage.TRANSFER_OK])
+
+
 def account_menu_handler(session, input_card_number):
     result = None
-    action = get_menu_choice(menu_prompts[MenuPrompt.ACCOUNT_MENU])
+    action = request_integer(menu_prompts[MenuPrompt.ACCOUNT_MENU])
     if action == AccountMenuChoice.EXIT:
         result = BaseMenuChoice.EXIT
     elif action == AccountMenuChoice.SHOW_BALANCE:
         print_credit_card_balance(session, input_card_number)
+    elif action == AccountMenuChoice.ADD_INCOME:
+        income = request_integer(user_messages[UserMessage.INCOME_PROMPT])
+        add_income_to_account(session, input_card_number, income)
+        print(user_messages[UserMessage.INCOME_CONFIRM])
+    elif action == AccountMenuChoice.TRANSFER:
+        transfer_money(session, input_card_number)
+    elif action == AccountMenuChoice.CLOSE_ACCOUNT:
+        close_account(session, input_card_number)
+        result = AccountMenuChoice.ACCOUNT_LOGOUT
     elif action == AccountMenuChoice.ACCOUNT_LOGOUT:
         result = AccountMenuChoice.ACCOUNT_LOGOUT
         print(user_messages[UserMessage.LOGOUT_OK])
@@ -138,15 +240,26 @@ def account_loop(session, card_number):
 
 def is_valid_login(session, card_number, card_pin):
     c = session.cursor()
-    account_info = (card_number, card_pin)
+    account_details = (card_number, card_pin)
     c.execute('''SELECT *
                    FROM card
                   WHERE
                 number = ?
                 AND
                 pin = ?'''\
-               ,account_info)
+               ,account_details)
     result = c.fetchone() is not None
+    return result
+
+
+def passes_luhn_alogrithm(number_string):
+    number_list = [int(digit) for digit in number_string]
+    for j, digit in enumerate(number_list, 0):
+        if (j + 1) % 2 != 0:
+            number_list[j] = number_list[j] * 2
+            if number_list[j] > 9:
+                number_list[j] = number_list[j] - 9
+    result = sum(number_list) % 10 == 0
     return result
 
 
@@ -187,15 +300,16 @@ def create_account(session):
     keep_in_account_creation = True
     while keep_in_account_creation:
         credit_card = create_credit_card()
-        if not already_exists(session, credit_card):
+        card_number = credit_card.get_card_number()
+        if not already_exists(session, card_number):
             keep_in_account_creation = False
             save_account(session, credit_card)
             print_credit_card_info(credit_card)
 
 
-def already_exists(session, credit_card):
+def already_exists(session, card_number):
     c = session.cursor()
-    card_number = (credit_card.get_card_number(),)
+    card_number = (card_number,)
     c.execute('''SELECT *
                    FROM card
                   WHERE
@@ -223,13 +337,13 @@ def save_account(session, credit_card):
     session.commit()
             
 
-def get_menu_choice(message):
+def request_integer(message):
     print(message)
     return int(input())
 
 
 def base_menu_handler(session):
-    action = get_menu_choice(menu_prompts[MenuPrompt.BASE_MENU])
+    action = request_integer(menu_prompts[MenuPrompt.BASE_MENU])
     if action == BaseMenuChoice.EXIT:
         result = BaseMenuChoice.EXIT
     elif action == BaseMenuChoice.CREATE_ACCOUNT:
@@ -256,6 +370,7 @@ def setup_database():
                  number TEXT,
                  pin TEXT,
                  balance INTEGER DEFAULT 0)''')
+
 
 if __name__ == "__main__":
     setup_database()
